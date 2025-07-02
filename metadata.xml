@@ -3,16 +3,21 @@
     <name>Connected Items Visualizer(CIV)</name>
     <directory>connected items visualizer</directory>
     <id>3511669947</id>
-    <description>연결된 아이템들을 같은 색깔 혹은 숫자로 표시해주는 모드입니다. More Options 같은 아이템들의 연결 관계를 시각적으로 확인할 수 있습니다.
+    <description>연결된 아이템들을 같은 숫자로 표시해주는 모드입니다. More Options 같은 아이템들의 연결 관계를 시각적으로 확인할 수 있습니다.
+
+Mod Config Menu 호환
+
+추후 구현 사항
+- Color Arrow Pointer 모드 추가
+
 
 A mod that displays connected items with the same color or number. You can visually check the connection relationships of items like More Options.
 
 Compatible with mod config menu.
 
-Not compatible:
-- Golden Items mod with Color effects option enabled
-</description>
-    <version>1.2</version>
+ToDo
+- Add Color Arrow Pointer mod</description>
+    <version>1.4</version>
     <visibility>Public</visibility>
     <tag id="Lua"/>
     <tag id="Graphics"/>
