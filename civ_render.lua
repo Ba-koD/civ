@@ -8,47 +8,119 @@ CIV.Render = CIV.Render or {}
 local game = Game()
 local renderCallCount = 0
 
--- 기존 코드와 동일한 베이스 오프셋 (사용자 오프셋 0,0일 때 기존과 같은 위치)
+-- Rendering Offsets
 local BASE_OFFSET_X = 10
-local BASE_OFFSET_Y = -17  -- 양수로 변경하여 우측 하단에 표시
+local BASE_OFFSET_Y = -17
+local ARROW_BASE_OFFSET_X = 8
+local ARROW_BASE_OFFSET_Y = -40
 
-local function RenderNumber(number, position, mod)
+-- Scale Animation System
+local itemScales = {}
+local SCALE_SPEED = 0.05
+local MAX_SCALE = 2.0
+local MIN_SCALE = 1.0
+
+-- ============================
+-- Utility Functions
+-- ============================
+
+local function lerp(a, b, t)
+    return a + (b - a) * t
+end
+
+local function getItemKey(pickup)
+    if not pickup or not pickup:Exists() then
+        return "invalid_pickup"
+    end
+    
+    local pos = pickup.Position
+    local posKey = string.format("%.1f_%.1f", pos.X, pos.Y)
+    local seed = pickup.InitSeed or 0
+    local subtype = pickup.SubType or 0
+    local variant = pickup.Variant or 0
+    local type = pickup.Type or 0
+    
+    return seed .. "_" .. type .. "_" .. variant .. "_" .. subtype .. "_" .. posKey
+end
+
+local function updateItemScale(pickup, isNearby)
+    local key = getItemKey(pickup)
+    local targetScale = isNearby and MAX_SCALE or MIN_SCALE
+    
+    if not itemScales[key] then
+        itemScales[key] = MIN_SCALE
+    end
+    
+    itemScales[key] = lerp(itemScales[key], targetScale, SCALE_SPEED)
+    return itemScales[key]
+end
+
+-- ============================
+-- Rendering Functions
+-- ============================
+
+local function RenderNumber(number, position, mod, pickup)
     if not number or not position or not mod then return end
     
     local success, err = pcall(function()
-        -- 기존 코드와 동일하게 Isaac.WorldToScreen 사용
         local screenPos = Isaac.WorldToScreen(position)
         local numberText = tostring(number)
         
-        -- 사용자 설정 오프셋 + 베이스 오프셋
-        local offsetX = (mod.Config["numberOffsetX"] or 0) + BASE_OFFSET_X
-        local offsetY = (mod.Config["numberOffsetY"] or 0) + BASE_OFFSET_Y
-        
-        -- 기존 코드와 동일한 텍스트 길이 조정
+        local offsetX = mod.Config["numberOffsetX"] + BASE_OFFSET_X
+        local offsetY = mod.Config["numberOffsetY"] + BASE_OFFSET_Y
         local finalOffsetX = offsetX - (#numberText - 1) * 2
         local finalOffsetY = offsetY
         
-        -- 색상 정보 추출 (기존 코드 호환성을 위해)
-        local colorIndex = ((number - 1) % #CIV.Utils.NUMBER_COLORS) + 1
-        local color = CIV.Utils.NUMBER_COLORS[colorIndex]
+        -- Scale calculation
+        local scale = MIN_SCALE
+        local key = "no_pickup"
+        if pickup then
+            key = getItemKey(pickup)
+            local foundScale = itemScales[key]
+            if foundScale then
+                scale = foundScale
+            end
+            
+            if mod.Config["showDebug"] and renderCallCount % 60 == 0 and scale > MIN_SCALE then
+                Isaac.DebugString("CIV RenderNumber: key=" .. key .. ", scale=" .. string.format("%.2f", scale) .. ", number=" .. numberText)
+            end
+        end
         
-        -- 기존 코드와 동일한 테두리 효과 (검은색)
+        local scaleX = scale * 0.8
+        local scaleY = scale * 0.8
+        
+        -- Glow effect for highlighted items
+        if scale > MIN_SCALE then
+            local glowIntensity = (scale - MIN_SCALE) / (MAX_SCALE - MIN_SCALE)
+            local glowAlpha = glowIntensity * 0.4
+            
+            Isaac.RenderScaledText(numberText, 
+                                 screenPos.X + finalOffsetX, 
+                                 screenPos.Y + finalOffsetY, 
+                                 scaleX + 0.2, scaleY + 0.2, 
+                                 1.0, 1.0, 1.0, glowAlpha)
+        end
+        
+        -- Black border effect
+        local borderScale = scaleX * 0.98
         for dx = -1, 1 do
             for dy = -1, 1 do
                 if dx ~= 0 or dy ~= 0 then
-                    Isaac.RenderText(numberText, 
-                                   screenPos.X + finalOffsetX + dx, 
-                                   screenPos.Y + finalOffsetY + dy,
-                                   0, 0, 0, 150)
+                    Isaac.RenderScaledText(numberText, 
+                                         screenPos.X + finalOffsetX + dx, 
+                                         screenPos.Y + finalOffsetY + dy,
+                                         borderScale, borderScale,
+                                         0.0, 0.0, 0.0, 0.7)
                 end
             end
         end
         
-        -- 메인 숫자 텍스트
-        Isaac.RenderText(numberText, 
-                       screenPos.X + finalOffsetX, 
-                       screenPos.Y + finalOffsetY,
-                       color[1], color[2], color[3], 255)
+        -- Main number text
+        Isaac.RenderScaledText(numberText, 
+                             screenPos.X + finalOffsetX, 
+                             screenPos.Y + finalOffsetY,
+                             scaleX, scaleY,
+                             1.0, 1.0, 1.0, 1.0)
     end)
     
     if not success and mod.Config and mod.Config["showDebug"] then
@@ -56,127 +128,288 @@ local function RenderNumber(number, position, mod)
     end
 end
 
+local function RenderArrowPointer(groupNumber, position, mod, itemIndex, totalItems, pickup)
+    if not groupNumber or not position then return end
+    
+    local success, err = pcall(function()
+        local screenPos = Isaac.WorldToScreen(position)
+        
+        local arrowOffsetX = mod.Config["arrowOffsetX"] + ARROW_BASE_OFFSET_X
+        local arrowOffsetY = mod.Config["arrowOffsetY"] + ARROW_BASE_OFFSET_Y
+        local arrowX = screenPos.X + arrowOffsetX
+        local arrowY = screenPos.Y + arrowOffsetY
+        local arrowChar = "↙"
+        
+        -- Scale calculation
+        local scale = MIN_SCALE
+        local key = "no_pickup"
+        if pickup then
+            key = getItemKey(pickup)
+            local foundScale = itemScales[key]
+            if foundScale then
+                scale = foundScale
+            end
+            
+            if mod.Config["showDebug"] and renderCallCount % 60 == 0 and scale > MIN_SCALE then
+                Isaac.DebugString("CIV RenderArrow: key=" .. key .. ", scale=" .. string.format("%.2f", scale) .. ", group=" .. groupNumber)
+            end
+        end
+        
+        local scaleX = scale * 0.8
+        local scaleY = scale * 0.8
+        
+        -- Glow effect for highlighted items
+        if scale > MIN_SCALE then
+            local glowIntensity = (scale - MIN_SCALE) / (MAX_SCALE - MIN_SCALE)
+            local glowAlpha = glowIntensity * 0.4
+            
+            Isaac.RenderScaledText(arrowChar, 
+                                 arrowX, arrowY, 
+                                 scaleX + 0.2, scaleY + 0.2, 
+                                 1.0, 1.0, 1.0, glowAlpha)
+        end
+        
+        -- Main arrow
+        Isaac.RenderScaledText(arrowChar, 
+                             arrowX, arrowY, 
+                             scaleX, scaleY, 
+                             1.0, 1.0, 1.0, 1.0)
+    end)
+    
+    if not success and mod.Config and mod.Config["showDebug"] then
+        Isaac.RenderText("Arrow render error: " .. tostring(err), 10, 420, 255, 0, 0, 255)
+    end
+end
+
+-- ============================
+-- Debug Information Rendering
+-- ============================
+
 local function RenderScreenDebugInfo(mod)
     if not mod.Config["showScreenDebug"] then return end
     
-    local debugX = mod.Config["debugOffsetX"] or 400
-    local debugY = mod.Config["debugOffsetY"] or 10
+    local debugX = mod.Config["debugOffsetX"]
+    local debugY = mod.Config["debugOffsetY"]
     local lineHeight = 15
     local yPos = debugY
     
-    -- 기본 모드 상태 정보
-    Isaac.RenderText("=== CIV Debug Info ===", debugX, yPos, 255, 255, 0, 255)
-    yPos = yPos + lineHeight
-    
-    -- 모드 상태를 색상으로 구분하여 표시
-    local enabledColor = mod.Config["enabled"] and {255, 255, 255} or {255, 100, 100}
-    Isaac.RenderText("Enabled: " .. tostring(mod.Config["enabled"]), debugX, yPos, enabledColor[1], enabledColor[2], enabledColor[3], 255)
-    yPos = yPos + lineHeight
-    
-    Isaac.RenderText("MCM Visible: " .. tostring(ModConfigMenu and ModConfigMenu.IsVisible), debugX, yPos, 255, 255, 255, 255)
-    yPos = yPos + lineHeight
-    
-    Isaac.RenderText("Game Paused: " .. tostring(game:IsPaused()), debugX, yPos, 255, 255, 255, 255)
-    yPos = yPos + lineHeight
-    
-    Isaac.RenderText("HUD Visible: " .. tostring(game:GetHUD():IsVisible()), debugX, yPos, 255, 255, 255, 255)
-    yPos = yPos + lineHeight
-    
-    Isaac.RenderText("Render Count: " .. renderCallCount, debugX, yPos, 255, 255, 255, 255)
-    yPos = yPos + lineHeight
-    
-    Isaac.RenderText("Frame: " .. (game:GetFrameCount() % 1000), debugX, yPos, 100, 100, 255, 255)
-    yPos = yPos + lineHeight
-    
-    -- Death Certificate / 특수 방 체크
-    local isDeathCert = CIV.Utils:IsDeathCertificateFloor()
-    local deathColor = isDeathCert and {255, 100, 100} or {100, 255, 100}
-    Isaac.RenderText("Death Cert Floor: " .. tostring(isDeathCert), debugX, yPos, deathColor[1], deathColor[2], deathColor[3], 255)
-    yPos = yPos + lineHeight
-    
-    -- 모드가 비활성화되어 있으면 경고 표시
-    if not mod.Config["enabled"] then
-        Isaac.RenderText(">>> MOD DISABLED <<<", debugX, yPos, 255, 0, 0, 255)
-        yPos = yPos + lineHeight
-        return  -- 모드가 비활성화되면 나머지 정보는 표시하지 않음
-    end
-    
-    -- 렌더링 중단 조건들 체크
-    Isaac.RenderText("=== Render Conditions ===", debugX, yPos, 255, 255, 0, 255)
-    yPos = yPos + lineHeight
-    
-    -- 각 조건별로 상태 표시
-    if isDeathCert then
-        Isaac.RenderText("BLOCKED: Special Floor", debugX, yPos, 255, 0, 0, 255)
-        yPos = yPos + lineHeight
-    end
-    
-    if (ModConfigMenu and ModConfigMenu.IsVisible) then
-        Isaac.RenderText("BLOCKED: MCM Open", debugX, yPos, 255, 150, 0, 255)
-        yPos = yPos + lineHeight
-    end
-    
-    if game:IsPaused() then
-        Isaac.RenderText("BLOCKED: Game Paused", debugX, yPos, 255, 150, 0, 255)
-        yPos = yPos + lineHeight
-    end
-    
-    if not game:GetHUD():IsVisible() then
-        Isaac.RenderText("BLOCKED: HUD Hidden", debugX, yPos, 255, 150, 0, 255)
-        yPos = yPos + lineHeight
-    end
-    
-    -- 렌더링이 가능한 상태인지 표시
-    local canRender = not isDeathCert and 
-                     not (ModConfigMenu and ModConfigMenu.IsVisible) and 
-                     not game:IsPaused() and 
-                     game:GetHUD():IsVisible()
-    
-    local renderColor = canRender and {100, 255, 100} or {255, 100, 100}
-    Isaac.RenderText("Can Render: " .. tostring(canRender), debugX, yPos, renderColor[1], renderColor[2], renderColor[3], 255)
-    yPos = yPos + lineHeight
-    
-    -- 연결된 그룹 정보
-    local connectedGroups = CIV.Connection:GetConnectedGroups()
-    local groupCount = 0
-    for _ in pairs(connectedGroups) do
-        groupCount = groupCount + 1
-    end
-    
-    Isaac.RenderText("Connected Groups: " .. groupCount, debugX, yPos, 100, 255, 100, 255)
-    yPos = yPos + lineHeight
-    
-    -- 설정 값들 표시 (간략화)
-    Isaac.RenderText("=== Config Values ===", debugX, yPos, 255, 255, 0, 255)
-    yPos = yPos + lineHeight
-    
-    Isaac.RenderText("Number Offset: " .. (mod.Config["numberOffsetX"] or 0) .. ", " .. (mod.Config["numberOffsetY"] or 0), debugX, yPos, 200, 200, 200, 255)
-    yPos = yPos + lineHeight
-    
-    Isaac.RenderText("Debug Offset: " .. (mod.Config["debugOffsetX"] or 400) .. ", " .. (mod.Config["debugOffsetY"] or 10), debugX, yPos, 200, 200, 200, 255)
-    yPos = yPos + lineHeight
-    
-    Isaac.RenderText("Console Debug: " .. tostring(mod.Config["showDebug"]), debugX, yPos, 200, 200, 200, 255)
-    yPos = yPos + lineHeight
-    
-    -- 그룹별 아이템 상세 정보 (최대 3개 그룹만)
-    if groupCount > 0 then
-        Isaac.RenderText("=== Group Details ===", debugX, yPos, 255, 255, 0, 255)
+    -- Debug Info Section
+    if mod.Config["showDebugInfo"] then
+        Isaac.RenderText("=== CIV Debug Info ===", debugX, yPos, 255, 255, 0, 255)
         yPos = yPos + lineHeight
         
-        local groupsShown = 0
-        for groupNumber, items in pairs(connectedGroups) do
-            if groupsShown >= 3 then break end
-            
-            Isaac.RenderText("Group " .. groupNumber .. ": " .. #items .. " items", debugX, yPos, 150, 255, 150, 255)
+        local enabledColor = mod.Config["enabled"] and {255, 255, 255} or {255, 100, 100}
+        Isaac.RenderText("Enabled: " .. tostring(mod.Config["enabled"]), debugX, yPos, enabledColor[1], enabledColor[2], enabledColor[3], 255)
+        yPos = yPos + lineHeight
+        
+        Isaac.RenderText("MCM Visible: " .. tostring(ModConfigMenu and ModConfigMenu.IsVisible), debugX, yPos, 255, 255, 255, 255)
+        yPos = yPos + lineHeight
+        
+        Isaac.RenderText("Game Paused: " .. tostring(game:IsPaused()), debugX, yPos, 255, 255, 255, 255)
+        yPos = yPos + lineHeight
+        
+        Isaac.RenderText("HUD Visible: " .. tostring(game:GetHUD():IsVisible()), debugX, yPos, 255, 255, 255, 255)
+        yPos = yPos + lineHeight
+        
+        Isaac.RenderText("Render Count: " .. renderCallCount, debugX, yPos, 255, 255, 255, 255)
+        yPos = yPos + lineHeight
+        
+        Isaac.RenderText("Frame: " .. (game:GetFrameCount() % 1000), debugX, yPos, 100, 100, 255, 255)
+        yPos = yPos + lineHeight
+        
+        local isDeathCert = CIV.Utils:IsDeathCertificateFloor()
+        local deathColor = isDeathCert and {255, 100, 100} or {100, 255, 100}
+        Isaac.RenderText("Death Cert Floor: " .. tostring(isDeathCert), debugX, yPos, deathColor[1], deathColor[2], deathColor[3], 255)
+        yPos = yPos + lineHeight
+        
+        if not mod.Config["enabled"] then
+            Isaac.RenderText(">>> MOD DISABLED <<<", debugX, yPos, 255, 0, 0, 255)
             yPos = yPos + lineHeight
-            groupsShown = groupsShown + 1
+            return
+        end
+        
+        yPos = yPos + lineHeight
+    end
+    
+    -- Render Conditions Section
+    if mod.Config["showRenderConditions"] then
+        Isaac.RenderText("=== Render Conditions ===", debugX, yPos, 255, 255, 0, 255)
+        yPos = yPos + lineHeight
+        
+        local isDeathCert = CIV.Utils:IsDeathCertificateFloor()
+        if isDeathCert then
+            Isaac.RenderText("BLOCKED: Special Floor", debugX, yPos, 255, 0, 0, 255)
+            yPos = yPos + lineHeight
+        end
+        
+        if (ModConfigMenu and ModConfigMenu.IsVisible) then
+            Isaac.RenderText("BLOCKED: MCM Open", debugX, yPos, 255, 150, 0, 255)
+            yPos = yPos + lineHeight
+        end
+        
+        if game:IsPaused() then
+            Isaac.RenderText("BLOCKED: Game Paused", debugX, yPos, 255, 150, 0, 255)
+            yPos = yPos + lineHeight
+        end
+        
+        if not game:GetHUD():IsVisible() then
+            Isaac.RenderText("BLOCKED: HUD Hidden", debugX, yPos, 255, 150, 0, 255)
+            yPos = yPos + lineHeight
+        end
+        
+        local canRender = not isDeathCert and 
+                         not (ModConfigMenu and ModConfigMenu.IsVisible) and 
+                         not game:IsPaused() and 
+                         game:GetHUD():IsVisible()
+        
+        local renderColor = canRender and {100, 255, 100} or {255, 100, 100}
+        Isaac.RenderText("Can Render: " .. tostring(canRender), debugX, yPos, renderColor[1], renderColor[2], renderColor[3], 255)
+        yPos = yPos + lineHeight
+        
+        -- Connection and scale information
+        local connectedGroups = CIV.Connection:GetConnectedGroups()
+        local groupCount = 0
+        for _ in pairs(connectedGroups) do
+            groupCount = groupCount + 1
+        end
+        
+        Isaac.RenderText("Connected Groups: " .. groupCount, debugX, yPos, 100, 255, 100, 255)
+        yPos = yPos + lineHeight
+        
+        local scaledItemCount = 0
+        for key, scale in pairs(itemScales) do
+            if scale > MIN_SCALE then
+                scaledItemCount = scaledItemCount + 1
+            end
+        end
+        
+        local actualClosestGroup = nil
+        local player = Isaac.GetPlayer(0)
+        local playerPos = player and player.Position or nil
+        
+        if playerPos then
+            local closestDistance = math.huge
+            for groupNumber, items in pairs(connectedGroups) do
+                if items and #items >= 2 then
+                    for _, pickup in ipairs(items) do
+                        if pickup and pickup:Exists() and not pickup:IsDead() and not pickup:IsShopItem() then
+                            local distance = playerPos:Distance(pickup.Position)
+                            if distance <= mod.Config["detectionRadius"] and distance < closestDistance then
+                                closestDistance = distance
+                                actualClosestGroup = groupNumber
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+        Isaac.RenderText("Scaled Items: " .. scaledItemCount, debugX, yPos, 100, 255, 255, 255)
+        yPos = yPos + lineHeight
+        
+        Isaac.RenderText("Highlighted Group: " .. (actualClosestGroup or "None"), debugX, yPos, 255, 255, 100, 255)
+        yPos = yPos + lineHeight
+        
+        local maxScaleCount = 0
+        local minScaleCount = 0
+        local totalItemScales = 0
+        local totalConnectedItems = 0
+        
+        for key, scale in pairs(itemScales) do
+            totalItemScales = totalItemScales + 1
+            if scale >= MAX_SCALE * 0.9 then
+                maxScaleCount = maxScaleCount + 1
+            elseif scale <= MIN_SCALE * 1.1 then
+                minScaleCount = minScaleCount + 1
+            end
+        end
+        
+        for groupNumber, items in pairs(connectedGroups) do
+            if items and #items >= 2 then
+                totalConnectedItems = totalConnectedItems + #items
+            end
+        end
+        
+        Isaac.RenderText("MAX Scaled: " .. maxScaleCount .. " | MIN Scaled: " .. minScaleCount, debugX, yPos, 255, 200, 100, 255)
+        yPos = yPos + lineHeight
+        
+        Isaac.RenderText("Table Size: " .. totalItemScales .. " | Total Items: " .. totalConnectedItems, debugX, yPos, 150, 150, 255, 255)
+        yPos = yPos + lineHeight
+        
+        yPos = yPos + lineHeight
+    end
+    
+    -- Config Values Section
+    if mod.Config["showConfigValues"] then
+        Isaac.RenderText("=== Config Values ===", debugX, yPos, 255, 255, 0, 255)
+        yPos = yPos + lineHeight
+        
+        local displayModeText = "Unknown"
+        if mod.Config["displayMode"] == 1 then
+            displayModeText = "Numbers Only"
+        elseif mod.Config["displayMode"] == 2 then
+            displayModeText = "Arrows Only"
+        end
+        Isaac.RenderText("Display Mode: " .. displayModeText .. " (" .. mod.Config["displayMode"] .. ")", debugX, yPos, 200, 200, 200, 255)
+        yPos = yPos + lineHeight
+
+        Isaac.RenderText("Show Nearby Only: " .. tostring(mod.Config["showNearbyOnly"]), debugX, yPos, 200, 200, 200, 255)
+        yPos = yPos + lineHeight
+
+        Isaac.RenderText("Highlighting: " .. tostring(mod.Config["highlighting"]), debugX, yPos, 200, 200, 200, 255)
+        yPos = yPos + lineHeight
+
+        Isaac.RenderText("Detection Radius: " .. mod.Config["detectionRadius"], debugX, yPos, 200, 200, 200, 255)
+        yPos = yPos + lineHeight
+
+        Isaac.RenderText("Number Offset: " .. mod.Config["numberOffsetX"] .. ", " .. mod.Config["numberOffsetY"], debugX, yPos, 200, 200, 200, 255)
+        yPos = yPos + lineHeight
+
+        Isaac.RenderText("Arrow Offset: " .. mod.Config["arrowOffsetX"] .. ", " .. mod.Config["arrowOffsetY"], debugX, yPos, 200, 200, 200, 255)
+        yPos = yPos + lineHeight
+        
+        Isaac.RenderText("Debug Offset: " .. mod.Config["debugOffsetX"] .. ", " .. mod.Config["debugOffsetY"], debugX, yPos, 200, 200, 200, 255)
+        yPos = yPos + lineHeight
+        
+        Isaac.RenderText("Console Debug: " .. tostring(mod.Config["showDebug"]), debugX, yPos, 200, 200, 200, 255)
+        yPos = yPos + lineHeight
+        
+        yPos = yPos + lineHeight
+    end
+    
+    -- Group Details Section
+    if mod.Config["showGroupDetails"] then
+        local connectedGroups = CIV.Connection:GetConnectedGroups()
+        local groupCount = 0
+        for _ in pairs(connectedGroups) do
+            groupCount = groupCount + 1
+        end
+        
+        if groupCount > 0 then
+            Isaac.RenderText("=== Group Details ===", debugX, yPos, 255, 255, 0, 255)
+            yPos = yPos + lineHeight
+            
+            local groupsShown = 0
+            for groupNumber, items in pairs(connectedGroups) do
+                if groupsShown >= 5 then
+                    Isaac.RenderText("... and more", debugX, yPos, 150, 150, 150, 255)
+                    yPos = yPos + lineHeight
+                    break
+                end
+                
+                Isaac.RenderText("Group " .. groupNumber .. ": " .. #items .. " items", debugX, yPos, 150, 255, 150, 255)
+                yPos = yPos + lineHeight
+                groupsShown = groupsShown + 1
+            end
         end
     end
 end
 
+-- ============================
+-- Main Rendering Function
+-- ============================
+
 function CIV.Render:RenderConnectedItems(mod)
-    -- 화면 디버그 정보는 항상 최우선으로 표시 (MCM에서도 보이도록)
     RenderScreenDebugInfo(mod)
     
     if not mod.Config["enabled"] then 
@@ -190,14 +423,137 @@ function CIV.Render:RenderConnectedItems(mod)
     renderCallCount = renderCallCount + 1
     
     local connectedGroups = CIV.Connection:GetConnectedGroups()
+    local displayMode = mod.Config["displayMode"]
+    local player = Isaac.GetPlayer(0)
+    local playerPos = player and player.Position or nil
     
-    -- 새로운 구조: connectedGroups[groupNumber] = pickup entities 배열
+    -- Register all connected items and reset scales
+    local totalRegistered = 0
+    local debugKeys = {}
+    
     for groupNumber, items in pairs(connectedGroups) do
         if items and #items >= 2 then
             for _, pickup in ipairs(items) do
-                if pickup and pickup:Exists() then
-                    RenderNumber(groupNumber, pickup.Position, mod)
+                if pickup and pickup:Exists() and not pickup:IsDead() and not pickup:IsShopItem() then
+                    local key = getItemKey(pickup)
+                    itemScales[key] = MIN_SCALE
+                    totalRegistered = totalRegistered + 1
+                    table.insert(debugKeys, "G" .. groupNumber .. ":" .. key)
                 end
+            end
+        end
+    end
+    
+    -- Find closest group (needed for both highlighting and showNearbyOnly)
+    local closestGroup = nil
+    local closestDistance = math.huge
+    local highlightedCount = 0
+    
+    if playerPos then
+        for groupNumber, items in pairs(connectedGroups) do
+            if items and #items >= 2 then
+                for _, pickup in ipairs(items) do
+                    if pickup and pickup:Exists() and not pickup:IsDead() and not pickup:IsShopItem() then
+                        local distance = playerPos:Distance(pickup.Position)
+                        if distance <= mod.Config["detectionRadius"] and distance < closestDistance then
+                            closestDistance = distance
+                            closestGroup = groupNumber
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- Apply highlighting only if highlighting is enabled
+        if mod.Config["highlighting"] and closestGroup then
+            local selectedItems = connectedGroups[closestGroup]
+            if selectedItems then
+                for _, pickup in ipairs(selectedItems) do
+                    if pickup and pickup:Exists() and not pickup:IsDead() and not pickup:IsShopItem() then
+                        local key = getItemKey(pickup)
+                        itemScales[key] = MAX_SCALE
+                        highlightedCount = highlightedCount + 1
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Debug logging
+    if mod.Config["showDebug"] then
+        Isaac.DebugString("CIV: Registered " .. totalRegistered .. " items, Highlighted " .. highlightedCount .. " items")
+        Isaac.DebugString("CIV: Highlighting " .. (mod.Config["highlighting"] and "ENABLED" or "DISABLED"))
+        if #debugKeys <= 5 then
+            Isaac.DebugString("CIV: Keys: " .. table.concat(debugKeys, ", "))
+        else
+            Isaac.DebugString("CIV: Keys (first 5): " .. table.concat({debugKeys[1], debugKeys[2], debugKeys[3], debugKeys[4], debugKeys[5]}, ", ") .. "...")
+        end
+        
+        local scaleDistribution = {min = 0, max = 0, other = 0}
+        for key, scale in pairs(itemScales) do
+            if scale <= MIN_SCALE * 1.1 then
+                scaleDistribution.min = scaleDistribution.min + 1
+            elseif scale >= MAX_SCALE * 0.9 then
+                scaleDistribution.max = scaleDistribution.max + 1
+            else
+                scaleDistribution.other = scaleDistribution.other + 1
+            end
+        end
+        Isaac.DebugString("CIV: Scale distribution - MIN: " .. scaleDistribution.min .. ", MAX: " .. scaleDistribution.max .. ", OTHER: " .. scaleDistribution.other)
+    end
+    
+    -- Render items
+    if mod.Config["showNearbyOnly"] then
+        -- Show only closest group
+        if closestGroup then
+            local groupItems = connectedGroups[closestGroup]
+            if groupItems then
+                for _, pickup in ipairs(groupItems) do
+                    if pickup and pickup:Exists() and not pickup:IsDead() and not pickup:IsShopItem() then
+                        if displayMode == 1 then
+                            RenderNumber(closestGroup, pickup.Position, mod, pickup)
+                        elseif displayMode == 2 then
+                            RenderArrowPointer(closestGroup, pickup.Position, mod, 0, #groupItems, pickup)
+                        end
+                    end
+                end
+            end
+        end
+    else
+        -- Show all groups with highlighting
+        for groupNumber, items in pairs(connectedGroups) do
+            if items and #items >= 2 then
+                local totalItems = #items
+                
+                for itemIndex, pickup in ipairs(items) do
+                    if pickup and pickup:Exists() and not pickup:IsDead() and not pickup:IsShopItem() then
+                        if displayMode == 1 then
+                            RenderNumber(groupNumber, pickup.Position, mod, pickup)
+                        elseif displayMode == 2 then
+                            RenderArrowPointer(groupNumber, pickup.Position, mod, itemIndex - 1, totalItems, pickup)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Cleanup unused scale data
+    if renderCallCount % 300 == 0 then
+        local currentItems = {}
+        for groupNumber, items in pairs(connectedGroups) do
+            if items then
+                for _, pickup in ipairs(items) do
+                    if pickup and pickup:Exists() and not pickup:IsDead() then
+                        currentItems[getItemKey(pickup)] = true
+                    end
+                end
+            end
+        end
+        
+        for key in pairs(itemScales) do
+            if not currentItems[key] then
+                itemScales[key] = nil
             end
         end
     end

@@ -2,29 +2,49 @@
 -- CIV Configuration System  
 -- ============================
 
--- ⚠️  VERSION 업데이트 가이드  ⚠️
--- 1. metadata.xml에서 <version>값</version> 확인
--- 2. 아래 VERSION을 동일하게 변경
--- 3. 두 파일이 항상 같은 버전을 유지하세요!
+-- ⚠️  VERSION update guide  ⚠️
+-- 1. Check <version> value in metadata.xml
+-- 2. Update VERSION below to match
+-- 3. Keep both files at the same version!
 
-local VERSION = "1.5"  -- ← metadata.xml과 동일하게 유지!
+local VERSION = "1.6"
 
 CIV = CIV or {}
 CIV.Config = CIV.Config or {}
 CIV.VERSION = VERSION
 
 local DefaultConfig = {
+    -- general
     ["enabled"] = true,
-    ["showDebug"] = false,
-    ["showConsole"] = false,
-    ["showScreenDebug"] = false,   -- 화면 디버그 정보 표시
+    ["displayMode"] = 1,           -- 1=number, 2=arrow
+    ["showNearbyOnly"] = true,     -- show nearby only
+    ["highlighting"] = false,       -- enable highlighting (scaling effect)
+    ["detectionRadius"] = 100,     -- detection radius (pixels)
+
+    -- number display settings
     ["numberOffsetY"] = 0,
     ["numberOffsetX"] = 0,
-    ["debugOffsetX"] = 60,        -- EID 피하기 위해 오른쪽으로
-    ["debugOffsetY"] = 40,         -- 상단에서 약간 아래
+    
+    -- arrow display settings
+    ["arrowOffsetX"] = 0,          -- arrow X offset 
+    ["arrowOffsetY"] = 0,          -- arrow Y offset 
+    
+    -- debug
+    ["showDebug"] = false,
+    ["showConsole"] = false,
+    ["showScreenDebug"] = false,   -- screen debug info
+    
+    -- screen debug
+    ["showDebugInfo"] = true,      -- CIV Debug Info 섹션
+    ["showRenderConditions"] = true, -- Render Conditions 섹션
+    ["showConfigValues"] = true,   -- Config Values 섹션
+    ["showGroupDetails"] = true,   -- Group Details 섹션
+
+    ["debugOffsetX"] = 60,        -- avoid EID
+    ["debugOffsetY"] = 40,         -- slightly below top
 }
 
--- JSON 처리
+-- JSON processing
 local json = nil
 pcall(function() json = require("json") end)
 if not json then
@@ -67,13 +87,11 @@ function CIV.Config:SaveData(mod)
 end
 
 function CIV.Config:ResetToDefaults(mod)
-    -- 설정을 기본값으로 리셋
     for key, value in pairs(DefaultConfig) do
         mod.Config[key] = value
     end
     mod.Config.Version = CIV.VERSION
     
-    -- 즉시 저장
     CIV.Config:SaveData(mod)
     
     if CIV.Debug then

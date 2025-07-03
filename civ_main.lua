@@ -69,24 +69,24 @@ end
 -- Initialization
 -- ============================
 
--- 설정 초기화
+-- initialize settings
 CIV.Config:Init(mod)
 
 CIV.Debug:Info("Connected Items Visualizer v" .. CIV.VERSION .. " loading...")
 
--- 콜백 등록
+-- register callbacks
 mod:AddCallback(ModCallbacks.MC_POST_NEW_ROOM, OnNewRoom)
 mod:AddCallback(ModCallbacks.MC_POST_RENDER, OnRender)
 mod:AddCallback(ModCallbacks.MC_POST_UPDATE, OnUpdate)
 mod:AddCallback(ModCallbacks.MC_POST_GAME_STARTED, OnGameStart)
 mod:AddCallback(ModCallbacks.MC_PRE_GAME_EXIT, OnGameExit)
 
--- MCM 설정
+-- setup MCM
 CIV.MCM:Setup(mod)
 
 CIV.Debug:Info("Connected Items Visualizer v" .. CIV.VERSION .. " loaded successfully!")
 
--- API 객체 설정
+-- setup API object
 local API = {
     Version = CIV.VERSION,
     GetConnectedGroups = function() return CIV.Connection:GetConnectedGroups() end,

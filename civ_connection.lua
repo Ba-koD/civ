@@ -7,16 +7,15 @@ CIV.Connection = CIV.Connection or {}
 
 local connectedItemGroups = {}
 
--- 그룹 번호 매핑 시스템 (기존 코드와 동일)
-local groupNumberMapping = {}  -- OptionsPickupIndex -> 표시번호 매핑
-local nextDisplayNumber = 1    -- 다음에 할당할 표시번호
-local roomKey = ""             -- 현재 방 키
+-- group number mapping system (same as old code)
+local groupNumberMapping = {}  -- OptionsPickupIndex -> display number mapping
+local nextDisplayNumber = 1    -- next display number to assign
+local roomKey = ""             -- current room key
 
 local function FindConnectedItemsByOptionsIndex()
     local entities = Isaac.GetRoomEntities()
     local optionsGroups = {}
     
-    -- OptionsPickupIndex로 그룹화 (기존 996줄 코드와 동일)
     for _, entity in ipairs(entities) do
         if entity.Type == EntityType.ENTITY_PICKUP and entity.Variant == PickupVariant.PICKUP_COLLECTIBLE then
             local pickup = entity:ToPickup()
@@ -41,10 +40,10 @@ function CIV.Connection:UpdateConnectedItems(mod)
         return
     end
     
-    -- 현재 방 키 업데이트 (기존 코드와 동일)
+    -- update current room key
     local currentRoomKey = tostring(Game():GetLevel():GetCurrentRoomIndex())
     if roomKey ~= currentRoomKey then
-        -- 새로운 방에 들어갔으면 매핑 초기화
+        -- if new room, reset mapping
         roomKey = currentRoomKey
         groupNumberMapping = {}
         nextDisplayNumber = 1
@@ -52,7 +51,7 @@ function CIV.Connection:UpdateConnectedItems(mod)
     
     for index, items in pairs(optionsGroups) do
         if items and #items >= 2 then
-            -- 그룹 번호 매핑 (새로운 그룹이면 새 번호 할당)
+            -- map group number (new group = new number)
             if not groupNumberMapping[index] then
                 groupNumberMapping[index] = nextDisplayNumber
                 nextDisplayNumber = nextDisplayNumber + 1

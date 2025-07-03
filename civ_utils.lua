@@ -7,19 +7,6 @@ CIV.Utils = CIV.Utils or {}
 
 local game = Game()
 
-CIV.Utils.NUMBER_COLORS = {
-    {255, 100, 100}, -- 빨강
-    {100, 255, 100}, -- 초록  
-    {100, 150, 255}, -- 파랑
-    {255, 255, 100}, -- 노랑
-    {255, 150, 255}, -- 자홍
-    {150, 255, 255}, -- 청록
-    {255, 200, 100}, -- 주황
-    {200, 100, 255}, -- 보라
-    {100, 255, 200}, -- 연두
-    {255, 100, 200}, -- 핑크
-}
-
 local function GetDimension(room)
     local success, result = pcall(function()
         local level = game:GetLevel()
@@ -48,9 +35,7 @@ end
 
 function CIV.Utils:IsDeathCertificateFloor()
     local dimension = GetDimension()
-    -- Death Certificate = dimension 2, Genesis = dimension 1
-    -- 특수 dimension들에서는 모드 비활성화
-    return dimension == 1 or dimension == 2
+    return dimension == 2
 end
 
 function CIV.Utils:GetPedestalItems()
