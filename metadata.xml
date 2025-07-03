@@ -11,13 +11,13 @@ Mod Config Menu 호환
 - Color Arrow Pointer 모드 추가
 
 
-A mod that displays connected items with the same color or number. You can visually check the connection relationships of items like More Options.
+A mod that displays connected items with the same number. You can visually check the connection relationships of items like More Options.
 
 Compatible with mod config menu.
 
 ToDo
 - Add Color Arrow Pointer mod</description>
-    <version>1.4</version>
+    <version>1.5</version>
     <visibility>Public</visibility>
     <tag id="Lua"/>
     <tag id="Graphics"/>
