@@ -20,6 +20,12 @@ local SCALE_SPEED = 0.05
 local MAX_SCALE = 2.0
 local MIN_SCALE = 1.0
 
+-- MCM Preview Sprites are now created locally in the function to avoid state issues.
+
+-- MCM Preview sprite (persistent for proper loading)
+local mcmItemSprite = nil
+local mcmPedestalSprite = nil
+
 -- ============================
 -- Utility Functions
 -- ============================
@@ -59,11 +65,11 @@ end
 -- Rendering Functions
 -- ============================
 
-local function RenderNumber(number, position, mod, pickup)
-    if not number or not position or not mod then return end
+local function RenderNumber(number, position, mod, pickup, forceScreenPos)
+    if not number or (not position and not forceScreenPos) or not mod then return end
     
     local success, err = pcall(function()
-        local screenPos = Isaac.WorldToScreen(position)
+        local screenPos = forceScreenPos or Isaac.WorldToScreen(position)
         local numberText = tostring(number)
         
         local offsetX = mod.Config["numberOffsetX"] + BASE_OFFSET_X
@@ -128,11 +134,11 @@ local function RenderNumber(number, position, mod, pickup)
     end
 end
 
-local function RenderArrowPointer(groupNumber, position, mod, itemIndex, totalItems, pickup)
-    if not groupNumber or not position then return end
+local function RenderArrowPointer(groupNumber, position, mod, itemIndex, totalItems, pickup, forceScreenPos)
+    if not groupNumber or (not position and not forceScreenPos) then return end
     
     local success, err = pcall(function()
-        local screenPos = Isaac.WorldToScreen(position)
+        local screenPos = forceScreenPos or Isaac.WorldToScreen(position)
         
         local arrowOffsetX = mod.Config["arrowOffsetX"] + ARROW_BASE_OFFSET_X
         local arrowOffsetY = mod.Config["arrowOffsetY"] + ARROW_BASE_OFFSET_Y
@@ -178,6 +184,141 @@ local function RenderArrowPointer(groupNumber, position, mod, itemIndex, totalIt
     
     if not success and mod.Config and mod.Config["showDebug"] then
         Isaac.RenderText("Arrow render error: " .. tostring(err), 10, 420, 255, 0, 0, 255)
+    end
+end
+
+-- ============================
+-- MCM Preview Rendering
+-- ============================
+
+function CIV.Render:RenderMCMPreview(mod)
+    if not ModConfigMenu then return end
+    
+    -- Only show preview when the display mode matches what we're configuring
+    -- This is a workaround since direct tab detection didn't work
+    local displayMode = mod.Config["displayMode"]
+    
+    -- Try to detect current tab by checking if we're in CIV category
+    -- and show preview only when relevant
+    if not ModConfigMenu.IsVisible then return end
+    
+    -- Simple tab detection: show preview only on relevant tabs
+    -- We'll use a more reliable method - always show but indicate which mode
+    local currentSubcategory = "Unknown"
+    if ModConfigMenu.Config and ModConfigMenu.Config.CurrentSubcategory then
+        currentSubcategory = ModConfigMenu.Config.CurrentSubcategory
+    end
+    
+    -- Only show preview on Number and Arrow tabs
+    if currentSubcategory ~= "Number" and currentSubcategory ~= "Arrow" then
+        -- Try alternative detection method
+        local shouldShow = false
+        if displayMode == 1 and currentSubcategory == "Number" then
+            shouldShow = true
+        elseif displayMode == 2 and currentSubcategory == "Arrow" then
+            shouldShow = true
+        elseif currentSubcategory == "Unknown" then
+            -- If we can't detect tab, only show in Number mode to be safe
+            shouldShow = (displayMode == 1)
+        end
+        
+        if not shouldShow then return end
+    end
+    
+    -- Initialize sprites if not already done
+    if not mcmItemSprite then
+        mcmItemSprite = Sprite()
+        mcmItemSprite:Load("gfx/005.100_collectible.anm2", true)
+        
+        mcmPedestalSprite = Sprite()
+        mcmPedestalSprite:Load("gfx/005.100_collectible.anm2", true)
+        mcmPedestalSprite:ReplaceSpritesheet(1, "gfx/items/collectibles/collectibles_098_thenegative.png")
+        mcmPedestalSprite:LoadGraphics()
+        mcmPedestalSprite:SetFrame("Idle", 0)
+    end
+    
+    -- Position aligned with the offset settings area (more centered to MCM content)
+    local previewX = Isaac.GetScreenWidth() * 0.6  -- Moved slightly right for better balance
+    local previewY = Isaac.GetScreenHeight() * 0.65  -- Moved down a bit to avoid overlap with settings
+    
+    -- Render preview label
+    Isaac.RenderText("Preview:", previewX - 25, previewY - 50, 255, 255, 255, 255)
+    
+    -- Render pedestal background
+    local pedestalPos = Vector(previewX, previewY + 20)
+    mcmPedestalSprite.Color = Color(0.3, 0.3, 0.3, 1)
+    mcmPedestalSprite.Scale = Vector(0.8, 0.8)
+    mcmPedestalSprite:Render(pedestalPos, Vector(0,0), Vector(0,0))
+    
+    -- Get Polyphemus config and render item
+    local itemConfig = Isaac.GetItemConfig():GetCollectible(12) -- Polyphemus
+    if itemConfig and itemConfig.GfxFileName ~= "" then
+        mcmItemSprite:ReplaceSpritesheet(1, itemConfig.GfxFileName)
+        mcmItemSprite:LoadGraphics()
+        mcmItemSprite:SetFrame("Idle", 0)
+        
+        local itemPos = Vector(previewX, previewY)
+        mcmItemSprite:Render(itemPos, Vector(0,0), Vector(0,0))
+        
+        -- Use EXACT same calculations as the actual render functions
+        local currentOffsetX, currentOffsetY
+        
+        if displayMode == 1 then
+            -- Number mode: use EXACT same calculation as RenderNumber
+            local numberText = "1"
+            local offsetX = mod.Config["numberOffsetX"] + BASE_OFFSET_X
+            local offsetY = mod.Config["numberOffsetY"] + BASE_OFFSET_Y
+            local finalOffsetX = offsetX - (#numberText - 1) * 2
+            local finalOffsetY = offsetY
+            
+            currentOffsetX = mod.Config["numberOffsetX"]
+            currentOffsetY = mod.Config["numberOffsetY"]
+            
+            -- Render using Isaac.RenderScaledText directly like in RenderNumber
+            local screenX = previewX + finalOffsetX
+            local screenY = previewY + finalOffsetY
+            
+            -- Black border effect (same as RenderNumber)
+            for dx = -1, 1 do
+                for dy = -1, 1 do
+                    if dx ~= 0 or dy ~= 0 then
+                        Isaac.RenderScaledText(numberText, 
+                                             screenX + dx, 
+                                             screenY + dy,
+                                             0.8 * 0.98, 0.8 * 0.98,
+                                             0.0, 0.0, 0.0, 0.7)
+                    end
+                end
+            end
+            
+            -- Main number text
+            Isaac.RenderScaledText(numberText, 
+                                 screenX, 
+                                 screenY,
+                                 0.8, 0.8,
+                                 1.0, 1.0, 1.0, 1.0)
+                                 
+        elseif displayMode == 2 then
+            -- Arrow mode: use EXACT same calculation as RenderArrowPointer
+            local arrowOffsetX = mod.Config["arrowOffsetX"] + ARROW_BASE_OFFSET_X
+            local arrowOffsetY = mod.Config["arrowOffsetY"] + ARROW_BASE_OFFSET_Y
+            local arrowX = previewX + arrowOffsetX
+            local arrowY = previewY + arrowOffsetY
+            local arrowChar = "↙"
+            
+            currentOffsetX = mod.Config["arrowOffsetX"]
+            currentOffsetY = mod.Config["arrowOffsetY"]
+            
+            -- Main arrow (same as RenderArrowPointer)
+            Isaac.RenderScaledText(arrowChar, 
+                                 arrowX, arrowY, 
+                                 0.8, 0.8, 
+                                 1.0, 1.0, 1.0, 1.0)
+        end
+        
+        -- Show current offset values based on the mode
+        local offsetText = string.format("X: %d, Y: %d", currentOffsetX, currentOffsetY)
+        Isaac.RenderText(offsetText, previewX - 30, previewY, 200, 200, 200, 255)
     end
 end
 
@@ -412,12 +553,20 @@ end
 function CIV.Render:RenderConnectedItems(mod)
     RenderScreenDebugInfo(mod)
     
+    -- Handle MCM preview separately
+    if ModConfigMenu and ModConfigMenu.IsVisible then
+        -- pcall is removed to ensure any crash provides a clear error.
+        -- If this proves stable, pcall can be re-added for safety.
+        CIV.Render:RenderMCMPreview(mod)
+        return -- Don't render anything else
+    end
+    
     if not mod.Config["enabled"] then 
         return 
     end
     
     if CIV.Utils:IsDeathCertificateFloor() then return end
-    if (ModConfigMenu and ModConfigMenu.IsVisible) or game:IsPaused() then return end
+    if game:IsPaused() then return end
     if not game:GetHUD():IsVisible() then return end
     
     renderCallCount = renderCallCount + 1
