@@ -162,7 +162,7 @@ function CIV.MCM:Setup(mod)
         Info = {"Show error debug information.", "Turn this ON to see error messages."}
     })
     
-    -- Debug Options 서브카테고리 추가
+    -- Debug Options
     ModConfigMenu.AddSpace(categoryName, "Screen")
     ModConfigMenu.AddText(categoryName, "Screen", "--- Screen Debug Options ---")
     

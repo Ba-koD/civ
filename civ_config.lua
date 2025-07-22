@@ -35,10 +35,10 @@ local DefaultConfig = {
     ["showScreenDebug"] = false,   -- screen debug info
     
     -- screen debug
-    ["showDebugInfo"] = true,      -- CIV Debug Info 섹션
-    ["showRenderConditions"] = true, -- Render Conditions 섹션
-    ["showConfigValues"] = true,   -- Config Values 섹션
-    ["showGroupDetails"] = true,   -- Group Details 섹션
+    ["showDebugInfo"] = true,      -- CIV Debug Info section
+    ["showRenderConditions"] = true, -- Render Conditions section
+    ["showConfigValues"] = true,   -- Config Values section
+    ["showGroupDetails"] = true,   -- Group Details section
 
     ["debugOffsetX"] = 60,        -- avoid EID
     ["debugOffsetY"] = 40,         -- slightly below top

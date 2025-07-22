@@ -61,6 +61,14 @@ local function updateItemScale(pickup, isNearby)
     return itemScales[key]
 end
 
+-- Safe Name field extraction function
+local function getName(val)
+    if type(val) == "table" and val.Name then
+        return val.Name
+    end
+    return tostring(val)
+end
+
 -- ============================
 -- Rendering Functions
 -- ============================
@@ -191,95 +199,59 @@ end
 -- MCM Preview Rendering
 -- ============================
 
-function CIV.Render:RenderMCMPreview(mod)
+function CIV.Render:RenderMCMPreview(mod, previewMode)
     if not ModConfigMenu then return end
     if not mod.Config["enabled"] then return end
-    
-    -- Only show preview when the display mode matches what we're configuring
-    -- This is a workaround since direct tab detection didn't work
-    local displayMode = mod.Config["displayMode"]
-    
-    -- Try to detect current tab by checking if we're in CIV category
-    -- and show preview only when relevant
     if not ModConfigMenu.IsVisible then return end
-    
-    -- Simple tab detection: show preview only on relevant tabs
-    -- We'll use a more reliable method - always show but indicate which mode
-    local currentSubcategory = "Unknown"
-    if ModConfigMenu.Config and ModConfigMenu.Config.CurrentSubcategory then
-        currentSubcategory = ModConfigMenu.Config.CurrentSubcategory
-    end
-    
-    -- Only show preview on Number and Arrow tabs
-    if currentSubcategory ~= "Number" and currentSubcategory ~= "Arrow" then
-        -- Try alternative detection method
-        local shouldShow = false
-        if displayMode == 1 and currentSubcategory == "Number" then
-            shouldShow = true
-        elseif displayMode == 2 and currentSubcategory == "Arrow" then
-            shouldShow = true
-        elseif currentSubcategory == "Unknown" then
-            -- If we can't detect tab, only show in Number mode to be safe
-            shouldShow = (displayMode == 1)
-        end
-        
-        if not shouldShow then return end
-    end
-    
+
+    -- previewMode: 1(Number), 2(Arrow)
+
     -- Initialize sprites if not already done
     if not mcmItemSprite then
         mcmItemSprite = Sprite()
         mcmItemSprite:Load("gfx/005.100_collectible.anm2", true)
-        
+
         mcmPedestalSprite = Sprite()
         mcmPedestalSprite:Load("gfx/005.100_collectible.anm2", true)
         mcmPedestalSprite:ReplaceSpritesheet(1, "gfx/items/collectibles/collectibles_098_thenegative.png")
         mcmPedestalSprite:LoadGraphics()
         mcmPedestalSprite:SetFrame("Idle", 0)
     end
-    
-    -- Position aligned with the offset settings area (more centered to MCM content)
-    local previewX = Isaac.GetScreenWidth() * 0.6  -- Moved slightly right for better balance
-    local previewY = Isaac.GetScreenHeight() * 0.65  -- Moved down a bit to avoid overlap with settings
-    
-    -- Render preview label
+
+    local previewX = Isaac.GetScreenWidth() * 0.6
+    local previewY = Isaac.GetScreenHeight() * 0.65
+
     Isaac.RenderText("Preview:", previewX - 25, previewY - 50, 255, 255, 255, 255)
-    
-    -- Render pedestal background
+
     local pedestalPos = Vector(previewX, previewY + 20)
     mcmPedestalSprite.Color = Color(0.3, 0.3, 0.3, 1)
     mcmPedestalSprite.Scale = Vector(0.8, 0.8)
     mcmPedestalSprite:Render(pedestalPos, Vector(0,0), Vector(0,0))
-    
-    -- Get Polyphemus config and render item
-    local itemConfig = Isaac.GetItemConfig():GetCollectible(12) -- Polyphemus
+
+    local itemConfig = Isaac.GetItemConfig():GetCollectible(12)
     if itemConfig and itemConfig.GfxFileName ~= "" then
         mcmItemSprite:ReplaceSpritesheet(1, itemConfig.GfxFileName)
         mcmItemSprite:LoadGraphics()
         mcmItemSprite:SetFrame("Idle", 0)
-        
+
         local itemPos = Vector(previewX, previewY)
         mcmItemSprite:Render(itemPos, Vector(0,0), Vector(0,0))
-        
-        -- Use EXACT same calculations as the actual render functions
+
         local currentOffsetX, currentOffsetY
-        
-        if displayMode == 1 then
-            -- Number mode: use EXACT same calculation as RenderNumber
+
+        if previewMode == 1 then
             local numberText = "1"
             local offsetX = mod.Config["numberOffsetX"] + BASE_OFFSET_X
             local offsetY = mod.Config["numberOffsetY"] + BASE_OFFSET_Y
             local finalOffsetX = offsetX - (#numberText - 1) * 2
             local finalOffsetY = offsetY
-            
+
             currentOffsetX = mod.Config["numberOffsetX"]
             currentOffsetY = mod.Config["numberOffsetY"]
-            
-            -- Render using Isaac.RenderScaledText directly like in RenderNumber
+
             local screenX = previewX + finalOffsetX
             local screenY = previewY + finalOffsetY
-            
-            -- Black border effect (same as RenderNumber)
+
             for dx = -1, 1 do
                 for dy = -1, 1 do
                     if dx ~= 0 or dy ~= 0 then
@@ -291,33 +263,29 @@ function CIV.Render:RenderMCMPreview(mod)
                     end
                 end
             end
-            
-            -- Main number text
+
             Isaac.RenderScaledText(numberText, 
                                  screenX, 
                                  screenY,
                                  0.8, 0.8,
                                  1.0, 1.0, 1.0, 1.0)
-                                 
-        elseif displayMode == 2 then
-            -- Arrow mode: use EXACT same calculation as RenderArrowPointer
+
+        elseif previewMode == 2 then
             local arrowOffsetX = mod.Config["arrowOffsetX"] + ARROW_BASE_OFFSET_X
             local arrowOffsetY = mod.Config["arrowOffsetY"] + ARROW_BASE_OFFSET_Y
             local arrowX = previewX + arrowOffsetX
             local arrowY = previewY + arrowOffsetY
             local arrowChar = "↙"
-            
+
             currentOffsetX = mod.Config["arrowOffsetX"]
             currentOffsetY = mod.Config["arrowOffsetY"]
-            
-            -- Main arrow (same as RenderArrowPointer)
+
             Isaac.RenderScaledText(arrowChar, 
                                  arrowX, arrowY, 
                                  0.8, 0.8, 
                                  1.0, 1.0, 1.0, 1.0)
         end
-        
-        -- Show current offset values based on the mode
+
         local offsetText = string.format("X: %d, Y: %d", currentOffsetX, currentOffsetY)
         Isaac.RenderText(offsetText, previewX - 30, previewY, 200, 200, 200, 255)
     end
@@ -378,16 +346,26 @@ local function RenderScreenDebugInfo(mod)
         Isaac.RenderText("=== Render Conditions ===", debugX, yPos, 255, 255, 0, 255)
         yPos = yPos + lineHeight
         
-        -- MCM Focus 정보 Render Conditions에 출력
         if ModConfigMenu and ModConfigMenu.IsVisible then
-            local cat, sub, opt
+            local catName, subName, optName = nil, nil, nil
             if ModConfigMenu.GetCurrentFocus then
-                cat, sub, opt = ModConfigMenu.GetCurrentFocus()
+                local focus = ModConfigMenu.GetCurrentFocus()
+                catName = getName(focus.category)
+                subName = getName(focus.subcategory)
+                optName = focus.option
             end
-            local catName = cat and cat.Name or "nil"
-            local subName = sub and sub.Name or "nil"
-            local optText = opt and (opt.Display and opt:Display() or tostring(opt)) or "nil"
-            Isaac.RenderText("MCM Focus: " .. catName .. " / " .. subName, debugX, yPos, 200, 200, 255, 255)
+
+            local optText = "nil"
+            if optName then
+                if type(optName) == "table" and type(optName.Display) == "function" then
+                    optText = optName:Display()
+                elseif type(optName) == "table" and optName.Name then
+                    optText = optName.Name
+                else
+                    optText = tostring(optName)
+                end
+            end
+            Isaac.RenderText("MCM Focus: " .. tostring(catName) .. " / " .. tostring(subName), debugX, yPos, 200, 200, 255, 255)
             yPos = yPos + lineHeight
             Isaac.RenderText("MCM Option: " .. optText, debugX, yPos, 200, 200, 255, 255)
             yPos = yPos + lineHeight
@@ -575,15 +553,21 @@ function CIV.Render:RenderConnectedItems(mod)
 
     -- Handle MCM preview separately
     if ModConfigMenu and ModConfigMenu.IsVisible then
-        local cat, sub = nil, nil
+        local catName, subName, optName = nil, nil, nil
         if ModConfigMenu.GetCurrentFocus then
-            cat, sub = ModConfigMenu.GetCurrentFocus()
+            local focus = ModConfigMenu.GetCurrentFocus()
+            catName = getName(focus.category)
+            subName = getName(focus.subcategory)
+            optName = focus.option
         end
         local civCategoryName = "CIV v" .. (CIV.VERSION or "?")
-        local catName = cat and cat.Name or ""
-        local subName = sub and sub.Name or ""
-        if catName == civCategoryName and (subName == "Number" or subName == "Arrow") then
-            CIV.Render:RenderMCMPreview(mod)
+        local catNameStr = tostring(catName)
+        local civCategoryNameStr = tostring(civCategoryName)
+        local subNameStr = tostring(subName)
+
+        if catNameStr == civCategoryNameStr and (subNameStr == "Number" or subNameStr == "Arrow") then
+            local previewMode = subNameStr == "Number" and 1 or 2
+            CIV.Render:RenderMCMPreview(mod, previewMode)
             return
         end
         return
