@@ -193,6 +193,7 @@ end
 
 function CIV.Render:RenderMCMPreview(mod)
     if not ModConfigMenu then return end
+    if not mod.Config["enabled"] then return end
     
     -- Only show preview when the display mode matches what we're configuring
     -- This is a workaround since direct tab detection didn't work
@@ -342,7 +343,7 @@ local function RenderScreenDebugInfo(mod)
         local enabledColor = mod.Config["enabled"] and {255, 255, 255} or {255, 100, 100}
         Isaac.RenderText("Enabled: " .. tostring(mod.Config["enabled"]), debugX, yPos, enabledColor[1], enabledColor[2], enabledColor[3], 255)
         yPos = yPos + lineHeight
-        
+
         Isaac.RenderText("MCM Visible: " .. tostring(ModConfigMenu and ModConfigMenu.IsVisible), debugX, yPos, 255, 255, 255, 255)
         yPos = yPos + lineHeight
         
@@ -376,6 +377,21 @@ local function RenderScreenDebugInfo(mod)
     if mod.Config["showRenderConditions"] then
         Isaac.RenderText("=== Render Conditions ===", debugX, yPos, 255, 255, 0, 255)
         yPos = yPos + lineHeight
+        
+        -- MCM Focus 정보 Render Conditions에 출력
+        if ModConfigMenu and ModConfigMenu.IsVisible then
+            local cat, sub, opt
+            if ModConfigMenu.GetCurrentFocus then
+                cat, sub, opt = ModConfigMenu.GetCurrentFocus()
+            end
+            local catName = cat and cat.Name or "nil"
+            local subName = sub and sub.Name or "nil"
+            local optText = opt and (opt.Display and opt:Display() or tostring(opt)) or "nil"
+            Isaac.RenderText("MCM Focus: " .. catName .. " / " .. subName, debugX, yPos, 200, 200, 255, 255)
+            yPos = yPos + lineHeight
+            Isaac.RenderText("MCM Option: " .. optText, debugX, yPos, 200, 200, 255, 255)
+            yPos = yPos + lineHeight
+        end
         
         local isDeathCert = CIV.Utils:IsDeathCertificateFloor()
         if isDeathCert then
@@ -551,18 +567,26 @@ end
 -- ============================
 
 function CIV.Render:RenderConnectedItems(mod)
-    RenderScreenDebugInfo(mod)
-    
-    -- Handle MCM preview separately
-    if ModConfigMenu and ModConfigMenu.IsVisible then
-        -- pcall is removed to ensure any crash provides a clear error.
-        -- If this proves stable, pcall can be re-added for safety.
-        CIV.Render:RenderMCMPreview(mod)
-        return -- Don't render anything else
-    end
-    
     if not mod.Config["enabled"] then 
         return 
+    end
+    
+    RenderScreenDebugInfo(mod)
+
+    -- Handle MCM preview separately
+    if ModConfigMenu and ModConfigMenu.IsVisible then
+        local cat, sub = nil, nil
+        if ModConfigMenu.GetCurrentFocus then
+            cat, sub = ModConfigMenu.GetCurrentFocus()
+        end
+        local civCategoryName = "CIV v" .. (CIV.VERSION or "?")
+        local catName = cat and cat.Name or ""
+        local subName = sub and sub.Name or ""
+        if catName == civCategoryName and (subName == "Number" or subName == "Arrow") then
+            CIV.Render:RenderMCMPreview(mod)
+            return
+        end
+        return
     end
     
     if CIV.Utils:IsDeathCertificateFloor() then return end
